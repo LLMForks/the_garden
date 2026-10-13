@@ -25,6 +25,12 @@ sudo apt install libvulkan1 mesa-vulkan-drivers libasound2t64 libudev1 libwaylan
 
 Если видеодрайвер не поддерживает Vulkan, можно попробовать OpenGL: `WGPU_BACKEND=gl ./the_garden`.
 
+## Windows
+
+Распаковать `the_garden-windows-x64.zip` и запустить `the_garden.exe` — это один файл, ничего ставить не нужно
+(Windows 10/11 x64). Файл не подписан, поэтому SmartScreen может предупредить: «Подробнее» → «Выполнить в любом случае».
+Сохранение на Windows: `%APPDATA%\the_garden\save.ron`.
+
 ## Сохранения и обновление
 
 Прогресс хранится **отдельно от игры**: `~/.local/share/the_garden/save.ron`

@@ -41,6 +41,12 @@ pub struct SavePath(pub Option<PathBuf>);
 struct PendingPlayerPos(Option<Vec2>);
 
 pub fn default_save_path() -> PathBuf {
+    // Windows: %APPDATA%\the_garden\save.ron
+    if cfg!(windows) {
+        if let Some(a) = std::env::var_os("APPDATA") {
+            return PathBuf::from(a).join("the_garden").join("save.ron");
+        }
+    }
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())

@@ -2,6 +2,8 @@
 
 // Some data fields/helpers are kept for upcoming features (multiplayer, art swaps).
 #![allow(dead_code)]
+// no console window next to the game on Windows (except in debug builds)
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod assets;
 mod autotest;
