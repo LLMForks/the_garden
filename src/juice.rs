@@ -9,8 +9,7 @@ use std::collections::HashMap;
 
 use crate::assets::{Art, Sfx};
 use crate::data::{icon, Who};
-use crate::env::DayNight;
-use crate::farming::{Farm, FarmingPlugin, Fx, FxKind, GlowLight};
+use crate::farming::{Farm, FarmingPlugin, Fx, FxKind};
 use crate::world::{tile_bottom, tile_center};
 use crate::{MainCamera, Player};
 
@@ -572,6 +571,11 @@ fn fx_effects(
                     shake.0 = shake.0.max(0.1);
                 }
             }
+            FxKind::Untill => {
+                let grass = [Color::srgb(0.4, 0.66, 0.3), Color::srgb(0.55, 0.8, 0.35), Color::srgb(0.32, 0.55, 0.25)];
+                burst(&mut commands, c, 14, &grass, 45.0, 50.0, 230.0, b.y + 2.0);
+                play.write(Play::at(S::Place, c).vol(0.55).pitch(0.85));
+            }
             FxKind::Pickup => {
                 let cols = [Color::srgba(1.0, 1.0, 1.0, 0.8)];
                 burst(&mut commands, b + Vec2::Y * 4.0, 10, &cols, 50.0, 10.0, 0.0, b.y - 4.0);
@@ -617,14 +621,6 @@ fn ready_sparkles(mut commands: Commands, time: Res<Time>, farm: Res<Farm>, art:
     }
 }
 
-fn glow_lights(time: Res<Time>, dn: Res<DayNight>, mut q: Query<(&GlowLight, &mut Sprite)>) {
-    let t = time.elapsed_secs();
-    for (g, mut s) in &mut q {
-        let flicker = 0.9 + 0.1 * (t * 7.0 + g.phase).sin() * (t * 3.1 + g.phase * 2.0).sin();
-        s.color.set_alpha(g.base * dn.darkness.powf(0.7) * flicker * 1.4);
-    }
-}
-
 pub struct JuicePlugin;
 
 impl Plugin for JuicePlugin {
@@ -637,7 +633,7 @@ impl Plugin for JuicePlugin {
             .init_resource::<Actors>()
             .add_systems(
                 Update,
-                (play_sounds, punch, sway, particles, fx_effects, fly_items, float_texts, ready_sparkles, glow_lights),
+                (play_sounds, punch, sway, particles, fx_effects, fly_items, float_texts, ready_sparkles),
             )
             .add_systems(PostUpdate, world_anchors.before(bevy::ui::UiSystem::Layout));
     }

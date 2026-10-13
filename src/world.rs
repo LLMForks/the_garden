@@ -442,6 +442,12 @@ fn spawn_world(mut commands: Commands, art: Res<Art>, island: Res<Island>) {
         ));
         if b == Building::Kitchen {
             e.insert(KitchenSprite);
+            for wx in [-17.5, 16.5] {
+                commands.spawn((
+                    Transform::from_xyz(foot.x + wx, foot.y + 20.0, 0.0),
+                    crate::env::LightSource { radius: 30.0, intensity: 0.8, flicker: true, phase: wx },
+                ));
+            }
             commands.spawn((
                 Chimney,
                 Transform::from_xyz(foot.x + 17.0, foot.y + 58.0, 0.0),

@@ -1,7 +1,11 @@
 //! Time of day, seasons, weather, ambient visuals and audio.
 
 use bevy::audio::{AudioSinkPlayback, Volume};
+use bevy::asset::RenderAssetUsages;
+use bevy::image::ImageSampler;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::window::PrimaryWindow;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +25,7 @@ pub enum Weather {
 }
 
 #[derive(Resource, Clone, Serialize, Deserialize, Debug)]
+#[serde(default)]
 pub struct SeasonClock {
     pub day: u32,
     pub t: f32,
@@ -89,6 +94,37 @@ pub struct DayNight {
 
 #[derive(Component)]
 struct Overlay;
+
+/// A light that cuts through the night darkness.
+#[derive(Component, Clone, Copy)]
+pub struct LightSource {
+    pub radius: f32,
+    pub intensity: f32,
+    pub flicker: bool,
+    pub phase: f32,
+}
+
+/// World pixels per darkness texel.
+const TEXEL: f32 = 3.0;
+
+#[derive(Resource)]
+struct NightTex {
+    handle: Handle<Image>,
+    size: UVec2,
+    clear: bool,
+}
+
+fn night_image(size: UVec2) -> Image {
+    let mut img = Image::new_fill(
+        Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        &[0, 0, 0, 0],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    );
+    img.sampler = ImageSampler::linear();
+    img
+}
 #[derive(Component)]
 struct Cloud {
     speed: f32,
@@ -111,9 +147,18 @@ impl Plugin for EnvPlugin {
     }
 }
 
-fn setup_env(mut commands: Commands, art: Res<Art>, sfx: Res<Sfx>, island: Res<Island>) {
+fn setup_env(
+    mut commands: Commands,
+    art: Res<Art>,
+    sfx: Res<Sfx>,
+    island: Res<Island>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let size = UVec2::new(160, 100);
+    let handle = images.add(night_image(size));
+    commands.insert_resource(NightTex { handle: handle.clone(), size, clear: false });
     commands.spawn((
-        Sprite { color: Color::NONE, custom_size: Some(Vec2::splat(6000.0)), ..default() },
+        Sprite { custom_size: Some(size.as_vec2() * TEXEL), ..Sprite::from_image(handle) },
         Transform::from_xyz(0.0, 0.0, 60.0),
         Overlay,
     ));
@@ -207,16 +252,32 @@ fn tick_clock(
     dn.darkness = clock.darkness();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn overlay(
+    time: Res<Time>,
     clock: Res<SeasonClock>,
     dn: Res<DayNight>,
-    cam: Query<&Transform, (With<MainCamera>, Without<Overlay>)>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cam: Query<(&Transform, &Projection), (With<MainCamera>, Without<Overlay>)>,
     mut q: Query<(&mut Transform, &mut Sprite), With<Overlay>>,
+    lights: Query<(&GlobalTransform, &LightSource)>,
+    mut tex: ResMut<NightTex>,
+    mut images: ResMut<Assets<Image>>,
 ) {
-    let Ok(ct) = cam.single() else { return };
+    let Ok((ct, proj)) = cam.single() else { return };
     let Ok((mut tr, mut s)) = q.single_mut() else { return };
-    tr.translation.x = ct.translation.x;
-    tr.translation.y = ct.translation.y;
+    let scale = match proj {
+        Projection::Orthographic(o) => o.scale,
+        _ => 1.0,
+    };
+    let win = windows.single().map(|w| Vec2::new(w.width(), w.height())).unwrap_or(Vec2::new(1280.0, 720.0));
+    let view = win * scale + Vec2::splat(TEXEL * 8.0);
+    let size = (view / TEXEL).ceil().as_uvec2().max(UVec2::splat(8));
+    // keep texels fixed in the world so the darkness doesn't shimmer when walking
+    let center = (ct.translation.truncate() / TEXEL).round() * TEXEL;
+    tr.translation.x = center.x;
+    tr.translation.y = center.y;
+
     let d = dn.darkness;
     let dusk = clock.dusk();
     let night = Vec4::new(0.03, 0.04, 0.16, 0.74);
@@ -230,7 +291,73 @@ fn overlay(
     if clock.season() == Season::Winter {
         c = c.lerp(Vec4::new(0.6, 0.7, 1.0, 0.07), 0.5 * (1.0 - d));
     }
-    s.color = Color::srgba(c.x, c.y, c.z, c.w);
+    if size != tex.size {
+        tex.size = size;
+        tex.clear = false;
+        let _ = images.insert(&tex.handle, night_image(size));
+        s.custom_size = Some(size.as_vec2() * TEXEL);
+    }
+    if c.w < 0.004 {
+        // broad daylight: nothing to draw
+        if !tex.clear {
+            if let Some(img) = images.get_mut(&tex.handle) {
+                if let Some(data) = img.data.as_mut() {
+                    data.fill(0);
+                }
+            }
+            tex.clear = true;
+        }
+        return;
+    }
+    tex.clear = false;
+    let (w, h) = (size.x as usize, size.y as usize);
+    let origin = center + Vec2::new(-(w as f32) * TEXEL / 2.0, h as f32 * TEXEL / 2.0);
+    let mut lum = vec![0.0f32; w * h];
+    let t = time.elapsed_secs();
+    let strength = (d * 1.4).min(1.0);
+    if strength > 0.0 {
+        for (gt, l) in &lights {
+            let p = gt.translation().truncate();
+            let flick = if l.flicker { 1.0 + 0.05 * (t * 6.0 + l.phase).sin() * (t * 2.3 + l.phase).sin() } else { 1.0 };
+            let r = l.radius * flick;
+            // light position in texel space
+            let lx = (p.x - origin.x) / TEXEL;
+            let ly = (origin.y - p.y) / TEXEL;
+            let rt = r / TEXEL;
+            let x0 = (lx - rt).floor().max(0.0) as usize;
+            let x1 = ((lx + rt).ceil() as isize).clamp(0, w as isize - 1) as usize;
+            let y0 = (ly - rt).floor().max(0.0) as usize;
+            let y1 = ((ly + rt).ceil() as isize).clamp(0, h as isize - 1) as usize;
+            if lx + rt < 0.0 || ly + rt < 0.0 || x0 >= w || y0 >= h {
+                continue;
+            }
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    let dx = x as f32 + 0.5 - lx;
+                    let dy = y as f32 + 0.5 - ly;
+                    let q = (dx * dx + dy * dy) / (rt * rt);
+                    if q < 1.0 {
+                        let f = (1.0 - q) * (1.0 - q);
+                        lum[y * w + x] += f * l.intensity;
+                    }
+                }
+            }
+        }
+    }
+    let Some(img) = images.get_mut(&tex.handle) else { return };
+    let Some(data) = img.data.as_mut() else { return };
+    let warm = Vec3::new(1.0, 0.6, 0.22);
+    let base = c.truncate();
+    for (i, l) in lum.iter().enumerate() {
+        let l = (l.min(1.0)) * strength;
+        let rgb = base.lerp(warm, l * 0.8);
+        let a = c.w * (1.0 - l * 0.9);
+        let o = i * 4;
+        data[o] = (rgb.x * 255.0) as u8;
+        data[o + 1] = (rgb.y * 255.0) as u8;
+        data[o + 2] = (rgb.z * 255.0) as u8;
+        data[o + 3] = (a.clamp(0.0, 1.0) * 255.0) as u8;
+    }
 }
 
 fn clouds(time: Res<Time>, island: Res<Island>, clock: Res<SeasonClock>, mut q: Query<(&mut Transform, &mut Sprite, &Cloud)>) {

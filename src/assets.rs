@@ -53,6 +53,8 @@ pub struct Art {
     pub dock: Handle<Image>,
     pub boat: Handle<Image>,
     pub decor: Vec<(Decor, Handle<Image>)>,
+    pub fence_tiles: Handle<Image>,
+    pub fence_layout: Handle<TextureAtlasLayout>,
     pub cat: Handle<Image>,
     pub fox: Handle<Image>,
     pub pet_layout: Handle<TextureAtlasLayout>,
@@ -160,7 +162,7 @@ fn load_assets(
     };
     let font = fonts.add(
         Font::try_from_bytes(
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/PixelifySans-Garden.ttf"))
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/Nunito-Garden.ttf"))
                 .to_vec(),
         )
         .expect("font"),
@@ -174,6 +176,7 @@ fn load_assets(
     let kitchen_layout = grid(72, 64, 2, 1);
     let pet_layout = grid(16, 16, 6, 1);
     let butterfly_layout = grid(8, 8, 8, 1);
+    let fence_layout = grid(16, 16, 16, 1);
 
     let art = Art {
         font,
@@ -242,6 +245,8 @@ fn load_assets(
             (Decor::Pumpkin, img(sprite!("decor_pumpkin.png"))),
             (Decor::Snowman, img(sprite!("decor_snowman.png"))),
         ],
+        fence_tiles: img(sprite!("fence_tiles.png")),
+        fence_layout,
         cat: img(sprite!("pet_cat.png")),
         fox: img(sprite!("pet_fox.png")),
         pet_layout,

@@ -193,13 +193,8 @@ fn spawn_player(mut commands: Commands, art: Res<Art>, island: Res<Island>, mut 
     let pos = tile_center(start) - Vec2::Y * 4.0;
     let e = spawn_character(&mut commands, &art, Who::You, pos);
     commands.entity(e).insert(Player).with_child((
-        Sprite {
-            color: Color::srgba(1.0, 0.8, 0.5, 0.0),
-            custom_size: Some(Vec2::splat(110.0)),
-            ..Sprite::from_image(art.light.clone())
-        },
-        Transform::from_xyz(0.0, 10.0, 56.0),
-        crate::farming::GlowLight { base: 0.14, phase: 0.0 },
+        Transform::from_xyz(0.0, 10.0, 0.0),
+        crate::env::LightSource { radius: 34.0, intensity: 0.45, flicker: false, phase: 0.0 },
     ));
     actors.0.insert(Who::You, e);
     commands.spawn((
@@ -501,7 +496,20 @@ fn use_tools(
                 notes.write(Note::Feed(format!("{} — обратно на склад", d.name())));
                 anim.action_t = 0.2;
             }
-            Err(Deny::Nothing) => {}
+            Err(Deny::Nothing) => match farming::untill(&mut farm, &island, Who::You, target.tile) {
+                Ok(()) => {
+                    fx.write(Fx { kind: FxKind::Untill, tile: target.tile, who: Who::You });
+                    anim.action_t = 0.25;
+                    anim.tool_icon = Some(icon::HOE);
+                }
+                Err(Deny::Nothing) => {}
+                Err(Deny::Occupied) => {
+                    fx.write(Fx { kind: FxKind::Deny("Тут растёт урожай — сначала собери".into()), tile: target.tile, who: Who::You });
+                }
+                Err(e) => {
+                    fx.write(Fx { kind: FxKind::Deny(e.text()), tile: target.tile, who: Who::You });
+                }
+            },
             Err(e) => {
                 fx.write(Fx { kind: FxKind::Deny(e.text()), tile: target.tile, who: Who::You });
             }

@@ -44,6 +44,7 @@ pub fn stage_of(g: f32) -> usize {
 }
 
 #[derive(Resource, Default, Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
 pub struct Farm {
     pub plots: BTreeMap<(i32, i32), Plot>,
 }
@@ -58,6 +59,7 @@ impl Farm {
 }
 
 #[derive(Resource, Default, Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
 pub struct DecorMap {
     pub items: BTreeMap<(i32, i32), (Decor, Who)>,
 }
@@ -120,6 +122,22 @@ pub fn till(farm: &mut Farm, isl: &Island, decor: &DecorMap, who: Who, p: IVec2)
         return Err(Deny::NotYours(o));
     }
     farm.plots.insert((p.x, p.y), Plot { crop: None, growth: 0.0, watered: false, planter: who });
+    Ok(())
+}
+
+/// Turns an empty plot back into grass.
+pub fn untill(farm: &mut Farm, isl: &Island, who: Who, p: IVec2) -> Result<(), Deny> {
+    let Some(plot) = farm.get(p) else {
+        return Err(Deny::Nothing);
+    };
+    if plot.crop.is_some() {
+        return Err(Deny::Occupied);
+    }
+    let o = isl.owner(p);
+    if !o.can_build(who) {
+        return Err(Deny::NotYours(o));
+    }
+    farm.plots.remove(&(p.x, p.y));
     Ok(())
 }
 
@@ -280,6 +298,7 @@ pub enum FxKind {
     Harvest(Crop, u32),
     Place(Decor),
     Pickup,
+    Untill,
     Deny(String),
     Refill,
 }
@@ -294,11 +313,6 @@ pub struct CropVis {
 }
 #[derive(Component)]
 pub struct DecorVis(pub IVec2);
-#[derive(Component)]
-pub struct GlowLight {
-    pub base: f32,
-    pub phase: f32,
-}
 
 #[derive(Resource, Default)]
 pub struct PlotEntities {
@@ -412,12 +426,25 @@ fn sync_plots(
     }
 }
 
+/// Which neighbours of a fence are fences too (N=1, E=2, S=4, W=8).
+pub fn fence_mask(dm: &DecorMap, p: IVec2) -> usize {
+    let is = |d: IVec2| matches!(dm.items.get(&(p.x + d.x, p.y + d.y)), Some((Decor::Fence, _)));
+    (is(IVec2::new(0, -1)) as usize)
+        | (is(IVec2::new(1, 0)) as usize) << 1
+        | (is(IVec2::new(0, 1)) as usize) << 2
+        | (is(IVec2::new(-1, 0)) as usize) << 3
+}
+
+#[derive(Component)]
+pub struct FenceVis(pub IVec2);
+
 fn sync_decor(
     mut commands: Commands,
     art: Res<Art>,
     dm: Res<DecorMap>,
     mut ents: ResMut<PlotEntities>,
     mut island: ResMut<Island>,
+    mut fences: Query<(&FenceVis, &mut Sprite)>,
 ) {
     if !dm.is_changed() {
         return;
@@ -432,6 +459,12 @@ fn sync_decor(
         let i = island.idx(p);
         island.decor_solid[i] = false;
     }
+    // re-join existing fences with their (possibly new) neighbours
+    for (f, mut s) in &mut fences {
+        if let Some(a) = s.texture_atlas.as_mut() {
+            a.index = fence_mask(&dm, f.0);
+        }
+    }
     for (&(x, y), (d, _)) in &dm.items {
         let p = IVec2::new(x, y);
         if ents.decor.contains_key(&p) {
@@ -440,26 +473,39 @@ fn sync_decor(
         let i = island.idx(p);
         island.decor_solid[i] = true;
         let b = tile_bottom(p);
-        let e = commands
-            .spawn((
-                Sprite { anchor: Anchor::BottomCenter, ..Sprite::from_image(art.decor(*d)) },
-                Transform::from_xyz(b.x, b.y + 1.0, ysort(b.y)),
-                DecorVis(p),
-                Punch::new(0.6),
-            ))
-            .id();
+        let e = if *d == Decor::Fence {
+            commands
+                .spawn((
+                    Sprite {
+                        anchor: Anchor::BottomCenter,
+                        ..Sprite::from_atlas_image(
+                            art.fence_tiles.clone(),
+                            TextureAtlas { layout: art.fence_layout.clone(), index: fence_mask(&dm, p) },
+                        )
+                    },
+                    Transform::from_xyz(b.x, b.y, ysort(b.y)),
+                    DecorVis(p),
+                    FenceVis(p),
+                    Punch::new(0.5),
+                ))
+                .id()
+        } else {
+            commands
+                .spawn((
+                    Sprite { anchor: Anchor::BottomCenter, ..Sprite::from_image(art.decor(*d)) },
+                    Transform::from_xyz(b.x, b.y + 1.0, ysort(b.y)),
+                    DecorVis(p),
+                    Punch::new(0.6),
+                ))
+                .id()
+        };
         let light = if d.glows() {
-            let h = if *d == Decor::Lantern { 16.0 } else { 6.0 };
+            let (h, radius) = if *d == Decor::Lantern { (16.0, 56.0) } else { (6.0, 36.0) };
             Some(
                 commands
                     .spawn((
-                        Sprite {
-                            color: Color::srgba(1.0, 0.8, 0.45, 0.0),
-                            custom_size: Some(Vec2::splat(if *d == Decor::Lantern { 72.0 } else { 48.0 })),
-                            ..Sprite::from_image(art.light.clone())
-                        },
-                        Transform::from_xyz(b.x, b.y + h, 61.0),
-                        GlowLight { base: 0.55, phase: (x + y) as f32 },
+                        Transform::from_xyz(b.x, b.y + h, 0.0),
+                        crate::env::LightSource { radius, intensity: 1.0, flicker: true, phase: (x * 7 + y) as f32 },
                     ))
                     .id(),
             )
@@ -596,12 +642,40 @@ mod tests {
     }
 
     #[test]
+    fn untill_returns_grass() {
+        let (mut farm, isl, mut game, dm) = setup();
+        let p = your_tile(&isl);
+        till(&mut farm, &isl, &dm, Who::You, p).unwrap();
+        plant(&mut farm, &isl, &mut game, Who::You, p, Crop::Wheat).unwrap();
+        assert_eq!(untill(&mut farm, &isl, Who::You, p), Err(Deny::Occupied), "growing crops stay");
+        farm.get_mut(p).unwrap().crop = None;
+        assert_eq!(untill(&mut farm, &isl, Who::Mila, p), Err(Deny::NotYours(Owner::You)));
+        untill(&mut farm, &isl, Who::You, p).unwrap();
+        assert!(farm.get(p).is_none());
+        assert!(isl.farmable(p));
+        till(&mut farm, &isl, &dm, Who::You, p).unwrap();
+    }
+
+    #[test]
     fn locked_crops_cannot_be_planted() {
         let (mut farm, isl, mut game, dm) = setup();
         let p = your_tile(&isl);
         till(&mut farm, &isl, &dm, Who::You, p).unwrap();
         game.add(Item::Seeds(Crop::Potato), 1);
         assert_eq!(plant(&mut farm, &isl, &mut game, Who::You, p, Crop::Potato), Err(Deny::Locked(3)));
+    }
+
+    #[test]
+    fn fences_join_in_all_directions() {
+        let mut dm = DecorMap::default();
+        for p in [(5, 5), (6, 5), (5, 6), (5, 4), (4, 5)] {
+            dm.items.insert(p, (Decor::Fence, Who::You));
+        }
+        dm.items.insert((7, 5), (Decor::Lantern, Who::You));
+        assert_eq!(fence_mask(&dm, IVec2::new(5, 5)), 15);
+        assert_eq!(fence_mask(&dm, IVec2::new(6, 5)), 8, "lanterns don't join");
+        assert_eq!(fence_mask(&dm, IVec2::new(5, 6)), 1);
+        assert_eq!(fence_mask(&dm, IVec2::new(5, 4)), 4);
     }
 
     #[test]

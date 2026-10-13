@@ -25,8 +25,20 @@ sudo apt install libvulkan1 mesa-vulkan-drivers libasound2t64 libudev1 libwaylan
 
 Если видеодрайвер не поддерживает Vulkan, можно попробовать OpenGL: `WGPU_BACKEND=gl ./the_garden`.
 
-Сохранение: `~/.local/share/the_garden/save.ron` (автосейв каждые 20 с и при выходе).
-Новый остров: `./the_garden --fresh`.
+## Сохранения и обновление
+
+Прогресс хранится **отдельно от игры**: `~/.local/share/the_garden/save.ron`
+(если задан `XDG_DATA_HOME` — `$XDG_DATA_HOME/the_garden/save.ron`).
+Автосейв каждые 20 с, плюс при закрытии окна и при «Сохранить и выйти».
+
+Обновление без потери прогресса:
+
+1. В игре: Esc → «Сохранить и выйти» (или просто закрыть окно).
+2. По желанию сделать копию: `cp ~/.local/share/the_garden/save.ron ~/save-backup.ron`.
+3. Распаковать новый архив поверх старой папки (или в любую другую) и запустить `./the_garden`.
+
+Новые версии читают старые сохранения. **Не запускайте с `--fresh`** — этот флаг удаляет сохранение и начинает
+новый остров. Свой файл сохранения можно указать через `--save путь/к/save.ron`.
 
 ## Управление
 
@@ -34,7 +46,7 @@ sudo apt install libvulkan1 mesa-vulkan-drivers libasound2t64 libudev1 libwaylan
 | --- | --- |
 | WASD / стрелки | ходить (Shift — быстрее) |
 | ЛКМ / Пробел | действие инструментом (можно зажать и «рисовать» грядки) |
-| ПКМ | убрать украшение |
+| ПКМ | убрать украшение или вернуть траву на пустую грядку |
 | 1–7 / колесо | слот: мотыга, лейка, 4 вида семян, украшение |
 | R | сменить украшение в слоте 7 |
 | E | кухня, лавка, ящик продажи, колодец, доска, друзья, питомцы |
@@ -78,8 +90,7 @@ python3 tools/gen_art.py     # пиксель-арт, карта острова
 python3 tools/gen_audio.py   # звуки и музыка (синтез)
 ```
 
-Шрифт — [Pixelify Sans](https://github.com/eifetx/Pixelify-Sans) (SIL OFL 1.1, см. `assets/fonts/`),
-в кириллицу добавлены глифы «О» и «П».
+Шрифт — [Nunito](https://github.com/googlefonts/nunito) (SIL OFL 1.1, см. `assets/fonts/`).
 
 ## Тесты
 

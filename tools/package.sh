@@ -7,7 +7,7 @@ rm -rf dist/the_garden
 mkdir -p dist/the_garden
 cp target/release/the_garden dist/the_garden/
 cp README.md dist/the_garden/README.md
-cp assets/fonts/OFL-PixelifySans.txt dist/the_garden/LICENSE-font.txt
+cp assets/fonts/OFL-Nunito.txt dist/the_garden/LICENSE-font.txt
 cat > dist/the_garden/the_garden.desktop <<'DESK'
 [Desktop Entry]
 Type=Application

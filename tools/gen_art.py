@@ -1180,6 +1180,35 @@ def decor_fence():
     return outline(img)
 
 
+def fence_tiles():
+    """16 autotile variants, mask bits: N=1, E=2, S=4, W=8."""
+    frames = []
+    wood, wood_d, wood_l = hx("#c98b52"), hx("#a0683c"), hx("#e0a86a")
+    for m in range(16):
+        img = new(16, 16)
+        if m & 8:
+            rect(img, 0, 6, 7, 7, wood_d)
+            rect(img, 0, 11, 7, 12, wood_d)
+        if m & 2:
+            rect(img, 8, 6, 15, 7, wood_d)
+            rect(img, 8, 11, 15, 12, wood_d)
+        if m & 1:
+            rect(img, 6, 0, 9, 4, wood_d)
+            rect(img, 7, 0, 7, 4, wood_l)
+        if m & 4:
+            rect(img, 6, 12, 9, 15, wood_d)
+            rect(img, 7, 12, 7, 15, wood_l)
+        # the post
+        rect(img, 6, 3, 9, 14, wood)
+        rect(img, 6, 3, 6, 14, wood_l)
+        rect(img, 9, 4, 9, 14, wood_d)
+        put(img, 7, 2, wood)
+        put(img, 8, 2, wood)
+        outline(img)
+        frames.append(img)
+    save(strip(frames), "fence_tiles.png")
+
+
 def decor_flowerbed():
     img = new(16, 16)
     rect(img, 1, 9, 14, 14, hx("#8a5a34"))
@@ -1533,6 +1562,7 @@ def main():
              "pumpkin", "snowman", "mushroom"]
     for n, d in zip(names, decor):
         save(d, "decor_%s.png" % n)
+    fence_tiles()
     save(strip(pet_frames("cat")), "pet_cat.png")
     save(strip(pet_frames("fox")), "pet_fox.png")
     butterflies()

@@ -2,6 +2,8 @@
 //! (kitchen, shop, selling crate, storage chest, goals board, pause).
 
 use bevy::app::AppExit;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::ui::ComputedNode;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use rand::Rng;
@@ -33,6 +35,9 @@ pub enum Menu {
 pub struct UiState {
     pub menu: Option<Menu>,
     pub dirty: bool,
+    /// scroll offset of the open menu (kept while the menu is rebuilt)
+    pub scroll: f32,
+    last_kind: Option<std::mem::Discriminant<Menu>>,
 }
 
 impl UiState {
@@ -67,6 +72,12 @@ pub enum Act {
 
 #[derive(Component)]
 struct MenuRoot;
+#[derive(Component)]
+struct MenuScroll;
+#[derive(Component)]
+struct ScrollTrack;
+#[derive(Component)]
+struct ScrollThumb;
 #[derive(Component)]
 struct HudLevel;
 #[derive(Component)]
@@ -138,6 +149,7 @@ impl Plugin for UiPlugin {
                     open_menus,
                     menu_keys,
                     build_menu,
+                    menu_scroll,
                     menu_buttons,
                     button_hover,
                     smoke,
@@ -588,7 +600,7 @@ fn hotbar_update(
     }
     if let Ok(mut t) = name.single_mut() {
         let s = match hb.slot() {
-            Slot::Hoe => "Мотыга — вскопать землю".to_string(),
+            Slot::Hoe => "Мотыга — ЛКМ вскопать · ПКМ по пустой грядке вернуть траву".to_string(),
             Slot::Can => format!("Лейка — {} / {} (набрать: у воды или колодца)", game.can_water, CAN_CAPACITY),
             Slot::Seeds(c) => {
                 if game.crop_unlocked(c) {
@@ -1036,7 +1048,17 @@ fn build_menu(
     for e in &roots {
         commands.entity(e).despawn();
     }
-    let Some(menu) = ui.menu.clone() else { return };
+    let Some(menu) = ui.menu.clone() else {
+        ui.last_kind = None;
+        ui.scroll = 0.0;
+        return;
+    };
+    let kind = Some(std::mem::discriminant(&menu));
+    if ui.last_kind != kind {
+        ui.last_kind = kind;
+        ui.scroll = 0.0;
+    }
+    let scroll = ui.scroll;
     let art = &*art;
     let season = clock.season();
     commands
@@ -1057,13 +1079,24 @@ fn build_menu(
             root.spawn((
                 Node {
                     flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(18.0)),
-                    width: Val::Px(560.0),
-                    max_height: Val::Percent(90.0),
-                    overflow: Overflow::clip_y(),
+                    width: Val::Px(580.0),
+                    max_height: Val::Percent(88.0),
                     ..default()
                 },
                 panel_img(art),
+            ))
+            .with_children(|frame| {
+            frame.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::new(Val::Px(18.0), Val::Px(24.0), Val::Px(16.0), Val::Px(16.0)),
+                    overflow: Overflow::scroll_y(),
+                    min_height: Val::Px(0.0),
+                    flex_shrink: 1.0,
+                    ..default()
+                },
+                ScrollPosition { offset_x: 0.0, offset_y: scroll },
+                MenuScroll,
             ))
             .with_children(|p| {
                 match &menu {
@@ -1244,7 +1277,7 @@ fn build_menu(
                         section(p, art, "Общие цели");
                         for (i, g) in GOALS.iter().enumerate().skip(game.goal_idx.saturating_sub(1)).take(4) {
                             let (txt, col) = if i < game.goal_idx {
-                                (format!("✓ {}", g.title).replace('✓', "+"), GOOD)
+                                (format!("+ {}", g.title), GOOD)
                             } else if i == game.goal_idx {
                                 let (_, h, n) = game.goal_progress().unwrap();
                                 (format!("> {} — {}/{}", g.title, h, n), INK)
@@ -1306,7 +1339,7 @@ fn build_menu(
                         for (k, v) in [
                             ("WASD / стрелки", "ходить (Shift — быстрее)"),
                             ("ЛКМ / Пробел", "действие инструментом (можно зажать)"),
-                            ("ПКМ", "убрать украшение"),
+                            ("ПКМ", "убрать украшение / вернуть траву на пустую грядку"),
                             ("1–7 / колесо", "выбрать слот"),
                             ("R", "сменить украшение в слоте 7"),
                             ("E", "кухня, лавка, ящик, друзья, питомцы"),
@@ -1339,7 +1372,90 @@ fn build_menu(
                         });
                 }
             });
+            // scrollbar (shown only when the content doesn't fit)
+            frame
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(8.0),
+                        top: Val::Px(14.0),
+                        bottom: Val::Px(14.0),
+                        width: Val::Px(5.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.55, 0.42, 0.3, 0.18)),
+                    BorderRadius::all(Val::Px(3.0)),
+                    Visibility::Hidden,
+                    ScrollTrack,
+                ))
+                .with_child((
+                    Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), height: Val::Percent(30.0), ..default() },
+                    BackgroundColor(Color::srgba(0.55, 0.38, 0.24, 0.75)),
+                    BorderRadius::all(Val::Px(3.0)),
+                    ScrollThumb,
+                ));
+            });
         });
+}
+
+/// Mouse wheel / arrows / PageUp/PageDown scroll long menus.
+#[allow(clippy::type_complexity)]
+fn menu_scroll(
+    mut wheel: EventReader<MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut ui: ResMut<UiState>,
+    mut q: Query<(&mut ScrollPosition, &ComputedNode), With<MenuScroll>>,
+    mut track: Query<&mut Visibility, With<ScrollTrack>>,
+    mut thumb: Query<&mut Node, With<ScrollThumb>>,
+) {
+    let mut dy = 0.0;
+    for w in wheel.read() {
+        dy -= match w.unit {
+            MouseScrollUnit::Line => w.y * 40.0,
+            MouseScrollUnit::Pixel => w.y,
+        };
+    }
+    if ui.menu.is_none() {
+        return;
+    }
+    let speed = 520.0 * time.delta_secs();
+    if keys.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]) {
+        dy += speed;
+    }
+    if keys.any_pressed([KeyCode::ArrowUp, KeyCode::KeyW]) {
+        dy -= speed;
+    }
+    if keys.just_pressed(KeyCode::PageDown) {
+        dy += 300.0;
+    }
+    if keys.just_pressed(KeyCode::PageUp) {
+        dy -= 300.0;
+    }
+    let Ok((mut sp, comp)) = q.single_mut() else { return };
+    let inv = comp.inverse_scale_factor();
+    let view = comp.size().y * inv;
+    let content = comp.content_size().y * inv;
+    let max = (content - view).max(0.0);
+    let want = (sp.offset_y + dy).clamp(0.0, max);
+    if (want - sp.offset_y).abs() > 0.01 {
+        sp.offset_y = want;
+    }
+    ui.scroll = sp.offset_y;
+    let show = max > 1.0;
+    if let Ok(mut v) = track.single_mut() {
+        let want_v = if show { Visibility::Inherited } else { Visibility::Hidden };
+        if *v != want_v {
+            *v = want_v;
+        }
+    }
+    if show {
+        if let Ok(mut n) = thumb.single_mut() {
+            let frac = (view / content).clamp(0.1, 1.0);
+            n.height = Val::Percent(frac * 100.0);
+            n.top = Val::Percent(sp.offset_y / max * (1.0 - frac) * 100.0);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

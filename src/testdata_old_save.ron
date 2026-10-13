@@ -1,0 +1,55 @@
+(
+    version: 1,
+    saved_at: 1000,
+    game: (
+        storage: {
+            Seeds(Wheat): 8,
+            Seeds(Carrot): 5,
+            Decor(Fence): 4,
+            Decor(Flowerbed): 1,
+        },
+        coins: 20,
+        level: 1,
+        xp: 0,
+        skills: {
+            "Декоратор": (1, 0),
+            "Повар": (1, 0),
+            "Садовник": (1, 0),
+        },
+        stats: (
+            harvested: {},
+            harvested_total: 0,
+            watered: 0,
+            cooked: {},
+            cooked_total: 0,
+            placed: 0,
+            sold: 0,
+        ),
+        goal_idx: 0,
+        goal_start: (
+            harvested: {},
+            harvested_total: 0,
+            watered: 0,
+            cooked: {},
+            cooked_total: 0,
+            placed: 0,
+            sold: 0,
+        ),
+        can_water: 15,
+        pets: [],
+        tutorial: 0,
+        cozy: 0,
+    ),
+    farm: (
+        plots: {},
+    ),
+    decor: (
+        items: {},
+    ),
+    clock: (
+        day: 0,
+        t: 66.0,
+        weather: Clear,
+    ),
+    player: (312.0, -492.0),
+)

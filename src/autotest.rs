@@ -68,8 +68,9 @@ fn bot(
     time: Res<Time>,
     mut bot: ResMut<Bot>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
+    mut mouse: ResMut<ButtonInput<MouseButton>>,
     mut game: ResMut<Game>,
-    farm: Res<Farm>,
+    mut farm: ResMut<Farm>,
     mut dm: ResMut<DecorMap>,
     mut island: ResMut<Island>,
     mut clock: ResMut<SeasonClock>,
@@ -86,6 +87,7 @@ fn bot(
     for k in std::mem::take(&mut bot.release) {
         keys.release(k);
     }
+    mouse.release(MouseButton::Right);
     let mut tap = |bot: &mut Bot, k: KeyCode| {
         keys.press(k);
         bot.release.push(k);
@@ -221,7 +223,23 @@ fn bot(
             }
         }
         12 => {
-            if bot.t > 0.8 {
+            if bot.t > 0.6 && bot.t < 10.0 {
+                // right click on an empty plot returns the grass
+                let t = bot.start_tile + IVec2::NEG_X;
+                if farm.get(t).is_none_or(|p| p.crop.is_some()) {
+                    farm.plots.insert((t.x, t.y), farming::Plot { crop: None, growth: 0.0, watered: false, planter: Who::You });
+                }
+                anim.facing = Facing::Left;
+                mouse.press(MouseButton::Right);
+                bot.t = 10.0;
+            }
+            if bot.t > 10.3 {
+                let t = bot.start_tile + IVec2::NEG_X;
+                if farm.get(t).is_some() {
+                    return fail(&bot, &mut exit, "right click did not return the grass");
+                }
+                anim.facing = Facing::Down;
+                bot.log.push("right click returns grass".into());
                 game.add(Item::Crop(Crop::Wheat), 3);
                 ui.open(Menu::Kitchen);
                 next(&mut bot, "opened kitchen");
@@ -267,6 +285,24 @@ fn bot(
                 }
                 if placed < 3 {
                     return fail(&bot, &mut exit, &format!("only {} decor placed", placed));
+                }
+                // a 3x3 fence ring
+                let ring = base + IVec2::new(-5, 5);
+                let mut fences = 0;
+                for y in 0..3 {
+                    for x in 0..3 {
+                        if x == 1 && y == 1 {
+                            continue;
+                        }
+                        game.add(Item::Decor(Decor::Fence), 1);
+                        let p = ring + IVec2::new(x, y);
+                        if farming::place_decor(&mut dm, &farm, &mut island, &mut game, Who::You, p, Decor::Fence).is_ok() {
+                            fences += 1;
+                        }
+                    }
+                }
+                if fences < 8 || farming::fence_mask(&dm, ring) != 2 | 4 {
+                    return fail(&bot, &mut exit, &format!("fence ring broken: {} placed, corner mask {}", fences, farming::fence_mask(&dm, ring)));
                 }
                 next(&mut bot, "cooked bread, placed decor");
             }
@@ -331,14 +367,22 @@ fn bot(
         }
         22 => {
             if bot.t > 1.0 {
+                game.level = 4;
                 ui.open(Menu::Shop);
                 next(&mut bot, "open shop");
             }
         }
         23 => {
-            if bot.t > 0.8 {
-                shot(&mut commands, &bot, "07_shop.png");
-                next(&mut bot, "shop");
+            if bot.t > 0.8 && bot.t < 5.0 {
+                tap(&mut bot, KeyCode::PageDown);
+                bot.t = 5.0;
+            }
+            if bot.t > 5.6 {
+                if ui.scroll <= 0.0 {
+                    return fail(&bot, &mut exit, "shop menu did not scroll");
+                }
+                shot(&mut commands, &bot, "07_shop_scrolled.png");
+                next(&mut bot, "shop scrolls");
             }
         }
         24 => {
@@ -360,7 +404,7 @@ fn bot(
                 clock.day = DAYS_PER_SEASON * 3;
                 clock.t = DAY_SECS * 0.4;
                 clock.weather = Weather::Snow;
-                let p = tile_center(bot.start_tile) - Vec2::Y * 4.0;
+                let p = tile_center(bot.start_tile + IVec2::new(-2, 4)) - Vec2::Y * 4.0;
                 ptr.translation.x = p.x;
                 ptr.translation.y = p.y;
                 next(&mut bot, "go to winter");

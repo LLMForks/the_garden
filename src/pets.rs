@@ -237,7 +237,7 @@ fn fireflies(
     game: Res<Game>,
     dm: Res<DecorMap>,
     clock: Res<SeasonClock>,
-    mut q: Query<(Entity, &Firefly, &mut Transform, &mut Sprite)>,
+    mut q: Query<(Entity, &Firefly, &mut Transform, &mut Sprite, &mut crate::env::LightSource)>,
 ) {
     let want = if clock.season() == Season::Winter || game.cozy < 3 {
         0
@@ -252,11 +252,12 @@ fn fireflies(
         commands.spawn((
             Sprite {
                 color: Color::srgba(0.85, 1.0, 0.45, 0.0),
-                custom_size: Some(Vec2::splat(10.0)),
+                custom_size: Some(Vec2::splat(6.0)),
                 ..Sprite::from_image(art.light.clone())
             },
             Transform::from_xyz(home.x, home.y, 62.0),
             Firefly { home, phase: rng.gen_range(0.0..100.0) },
+            crate::env::LightSource { radius: 10.0, intensity: 0.0, flicker: false, phase: 0.0 },
         ));
     } else if have > want {
         if let Some((e, ..)) = q.iter().next() {
@@ -265,13 +266,14 @@ fn fireflies(
     }
     let t = time.elapsed_secs();
     let night = ((dn.darkness - 0.4) / 0.5).clamp(0.0, 1.0);
-    for (_, f, mut tr, mut s) in &mut q {
+    for (_, f, mut tr, mut s, mut light) in &mut q {
         let p = f.home
             + Vec2::new((t * 0.5 + f.phase).sin() * 22.0 + (t * 1.3 + f.phase).cos() * 6.0, (t * 0.7 + f.phase * 1.7).sin() * 14.0);
         tr.translation.x = p.x;
         tr.translation.y = p.y;
         let blink = ((t * 2.2 + f.phase).sin() * 0.5 + 0.5).powf(2.0);
-        s.color.set_alpha(night * (0.25 + 0.75 * blink));
+        s.color.set_alpha(night * (0.35 + 0.65 * blink));
+        light.intensity = 0.5 * blink;
     }
 }
 

@@ -312,6 +312,14 @@ mod tests {
     }
 
     #[test]
+    fn loads_saves_from_the_first_beta() {
+        let s = include_str!("testdata_old_save.ron");
+        let d: SaveData = ron::from_str(s).expect("old save must keep loading");
+        assert_eq!(d.version, VERSION);
+        assert_eq!(d.game.level, 1);
+    }
+
+    #[test]
     fn offline_progress_grows_and_reports() {
         let isl = Island::parse(MAP_TXT);
         let mut game = Game::default();

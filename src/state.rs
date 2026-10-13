@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use crate::data::*;
 
 #[derive(Clone, Default, Serialize, Deserialize, Debug)]
+#[serde(default)]
 pub struct Stats {
     pub harvested: BTreeMap<Crop, u32>,
     pub harvested_total: u32,
@@ -42,6 +43,7 @@ impl PetKind {
 }
 
 #[derive(Resource, Clone, Serialize, Deserialize, Debug)]
+#[serde(default)]
 pub struct Game {
     pub storage: BTreeMap<Item, u32>,
     pub coins: u32,
