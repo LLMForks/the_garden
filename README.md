@@ -20,7 +20,7 @@ cd the_garden
 (и под X11/XWayland). Нужны стандартные библиотеки рабочего стола — на Debian 13 с KDE они уже стоят:
 
 ```sh
-sudo apt install libvulkan1 mesa-vulkan-drivers libasound2t64 libudev1 libwayland-client0 libxkbcommon0
+sudo apt install libvulkan1 mesa-vulkan-drivers libasound2t64 libudev1 libwayland-client0 libxkbcommon0 libxkbcommon-x11-0
 ```
 
 Если видеодрайвер не поддерживает Vulkan, можно попробовать OpenGL: `WGPU_BACKEND=gl ./the_garden`.

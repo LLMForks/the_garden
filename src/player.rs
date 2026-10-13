@@ -192,7 +192,15 @@ fn spawn_player(mut commands: Commands, art: Res<Art>, island: Res<Island>, mut 
     let start = IVec2::new(z.max.x - 1, z.min.y + 1);
     let pos = tile_center(start) - Vec2::Y * 4.0;
     let e = spawn_character(&mut commands, &art, Who::You, pos);
-    commands.entity(e).insert(Player);
+    commands.entity(e).insert(Player).with_child((
+        Sprite {
+            color: Color::srgba(1.0, 0.8, 0.5, 0.0),
+            custom_size: Some(Vec2::splat(110.0)),
+            ..Sprite::from_image(art.light.clone())
+        },
+        Transform::from_xyz(0.0, 10.0, 56.0),
+        crate::farming::GlowLight { base: 0.14, phase: 0.0 },
+    ));
     actors.0.insert(Who::You, e);
     commands.spawn((
         Sprite::from_image(art.cursor.clone()),
@@ -461,13 +469,11 @@ fn targeting(
 
 #[allow(clippy::too_many_arguments)]
 fn use_tools(
-    mut commands: Commands,
     time: Res<Time>,
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     ui: Res<UiState>,
     target: Res<Target>,
-    hb: Res<Hotbar>,
     mut hold: ResMut<HoldState>,
     mut farm: ResMut<Farm>,
     mut dm: ResMut<DecorMap>,
@@ -605,7 +611,6 @@ fn use_tools(
             }
         }
     }
-    let _ = &mut commands;
 }
 
 fn interact_key(
@@ -805,7 +810,6 @@ fn camera_follow(
 fn draw_cursor(
     time: Res<Time>,
     target: Res<Target>,
-    hb: Res<Hotbar>,
     art: Res<Art>,
     ui: Res<UiState>,
     mut q: Query<(&mut Transform, &mut Sprite, &mut Visibility), (With<Cursor>, Without<Ghost>)>,
@@ -839,7 +843,6 @@ fn draw_cursor(
             *gv = Visibility::Hidden;
         }
     }
-    let _ = hb;
 }
 
 #[cfg(test)]

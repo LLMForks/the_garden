@@ -219,13 +219,13 @@ fn overlay(
     tr.translation.y = ct.translation.y;
     let d = dn.darkness;
     let dusk = clock.dusk();
-    let night = Vec4::new(0.06, 0.07, 0.22, 0.46);
-    let eve = Vec4::new(0.95, 0.45, 0.25, 0.16);
+    let night = Vec4::new(0.03, 0.04, 0.16, 0.74);
+    let eve = Vec4::new(0.95, 0.42, 0.22, 0.30);
     let mut c = Vec4::ZERO;
     c = c.lerp(eve, dusk * (1.0 - d * 0.6));
     c = c.lerp(night, d);
     if clock.weather == Weather::Rain {
-        c = c.lerp(Vec4::new(0.25, 0.30, 0.42, 0.22), 0.6 * (1.0 - d));
+        c = c.lerp(Vec4::new(0.22, 0.26, 0.36, 0.42), 0.6 * (1.0 - d));
     }
     if clock.season() == Season::Winter {
         c = c.lerp(Vec4::new(0.6, 0.7, 1.0, 0.07), 0.5 * (1.0 - d));

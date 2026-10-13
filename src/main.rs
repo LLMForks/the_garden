@@ -1,5 +1,8 @@
 //! The Garden — cozy co-op farming on one shared island (offline beta).
 
+// Some data fields/helpers are kept for upcoming features (multiplayer, art swaps).
+#![allow(dead_code)]
+
 mod assets;
 mod autotest;
 mod data;

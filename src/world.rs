@@ -381,6 +381,38 @@ fn spawn_world(mut commands: Commands, art: Res<Art>, island: Res<Island>) {
         let c = tile_center(*p);
         commands.spawn((Sprite::from_image(art.dock.clone()), Transform::from_xyz(c.x, c.y, -7.0)));
     }
+    // dashed zone borders so you can see where personal zones are
+    for z in island.zones.clone() {
+        let c = match z.owner.who() {
+            Some(w) => {
+                let c = w.color();
+                Color::srgba(c[0], c[1], c[2], 0.55)
+            }
+            None => Color::srgba(1.0, 0.95, 0.7, 0.35),
+        };
+        let x0 = z.min.x as f32 * TILE + 1.0;
+        let x1 = (z.max.x + 1) as f32 * TILE - 1.0;
+        let y0 = -(z.min.y as f32 * TILE) - 1.0;
+        let y1 = -((z.max.y + 1) as f32 * TILE) + 1.0;
+        let mut dash = |a: Vec2, size: Vec2| {
+            commands.spawn((
+                Sprite { color: c, custom_size: Some(size), ..default() },
+                Transform::from_xyz(a.x, a.y, -6.5),
+            ));
+        };
+        let mut x = x0;
+        while x < x1 {
+            dash(Vec2::new(x + 2.0, y0), Vec2::new(4.0, 2.0));
+            dash(Vec2::new(x + 2.0, y1), Vec2::new(4.0, 2.0));
+            x += 8.0;
+        }
+        let mut y = y1;
+        while y < y0 {
+            dash(Vec2::new(x0, y + 2.0), Vec2::new(2.0, 4.0));
+            dash(Vec2::new(x1, y + 2.0), Vec2::new(2.0, 4.0));
+            y += 8.0;
+        }
+    }
     // buildings
     for (b, p, s) in island.buildings.clone() {
         let foot = Vec2::new(

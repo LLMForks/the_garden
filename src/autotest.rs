@@ -69,7 +69,7 @@ fn bot(
     mut bot: ResMut<Bot>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut game: ResMut<Game>,
-    mut farm: ResMut<Farm>,
+    farm: Res<Farm>,
     mut dm: ResMut<DecorMap>,
     mut island: ResMut<Island>,
     mut clock: ResMut<SeasonClock>,
@@ -279,59 +279,82 @@ fn bot(
                 if game.pets.is_empty() {
                     return fail(&bot, &mut exit, "no pet came despite cozy garden");
                 }
-                // golden hour
                 clock.t = DAY_SECS * 0.77;
                 next(&mut bot, "a pet moved in");
             }
         }
         16 => {
-            if bot.t > 1.2 {
+            if bot.t > 1.5 {
                 shot(&mut commands, &bot, "04_evening.png");
-                clock.t = DAY_SECS * 0.9;
                 next(&mut bot, "evening");
             }
         }
         17 => {
-            if bot.t > 1.5 {
-                shot(&mut commands, &bot, "05_night.png");
-                // fast-forward so friends show up and work their gardens
-                speed.0 = 12.0;
-                clock.t = DAY_SECS * 0.3;
-                next(&mut bot, "night");
+            if bot.t > 1.0 {
+                clock.t = DAY_SECS * 0.9;
+                next(&mut bot, "night falls");
             }
         }
         18 => {
+            if bot.t > 1.5 {
+                shot(&mut commands, &bot, "05_night.png");
+                next(&mut bot, "night");
+            }
+        }
+        19 => {
+            // fast-forward so friends show up and work their gardens
+            if bot.t > 1.0 {
+                speed.0 = 12.0;
+                clock.t = DAY_SECS * 0.3;
+                next(&mut bot, "fast forward");
+            }
+        }
+        20 => {
             let present = npcs.iter().filter(|(_, v)| **v != Visibility::Hidden).count();
             let friend_plots = farm.plots.values().filter(|p| p.planter != Who::You).count();
             if present >= 2 && friend_plots >= 3 {
                 speed.0 = 1.0;
+                let s = island.zone(Owner::Shared).clone();
+                let c = tile_center(IVec2::new((s.min.x + s.max.x) / 2, s.min.y + 6));
+                ptr.translation.x = c.x;
+                ptr.translation.y = c.y;
                 next(&mut bot, &format!("{} friends on the island, {} friend plots", present, friend_plots));
             } else if bot.t > 40.0 {
                 return fail(&bot, &mut exit, &format!("friends inactive: present={} plots={}", present, friend_plots));
             }
         }
-        19 => {
-            // show the shared zone with friends at work
-            let s = island.zone(Owner::Shared).clone();
-            let c = tile_center(IVec2::new((s.min.x + s.max.x) / 2, s.min.y + 6));
-            ptr.translation.x = c.x;
-            ptr.translation.y = c.y;
-            if bot.t > 1.5 {
+        21 => {
+            if bot.t > 2.0 {
                 shot(&mut commands, &bot, "06_shared_zone.png");
-                ui.open(Menu::Shop);
                 next(&mut bot, "visited shared zone");
             }
         }
-        20 => {
-            if bot.t > 0.6 {
+        22 => {
+            if bot.t > 1.0 {
+                ui.open(Menu::Shop);
+                next(&mut bot, "open shop");
+            }
+        }
+        23 => {
+            if bot.t > 0.8 {
                 shot(&mut commands, &bot, "07_shop.png");
-                ui.open(Menu::Board);
                 next(&mut bot, "shop");
             }
         }
-        21 => {
-            if bot.t > 0.6 {
+        24 => {
+            if bot.t > 1.0 {
+                ui.open(Menu::Board);
+                next(&mut bot, "open board");
+            }
+        }
+        25 => {
+            if bot.t > 0.8 {
                 shot(&mut commands, &bot, "08_board.png");
+                next(&mut bot, "board");
+            }
+        }
+        26 => {
+            if bot.t > 1.0 {
                 ui.menu = None;
                 ui.dirty = true;
                 clock.day = DAYS_PER_SEASON * 3;
@@ -340,24 +363,29 @@ fn bot(
                 let p = tile_center(bot.start_tile) - Vec2::Y * 4.0;
                 ptr.translation.x = p.x;
                 ptr.translation.y = p.y;
-                next(&mut bot, "board");
+                next(&mut bot, "go to winter");
             }
         }
-        22 => {
-            if bot.t > 2.5 {
+        27 => {
+            if bot.t > 3.0 {
                 shot(&mut commands, &bot, "09_winter.png");
-                clock.day = DAYS_PER_SEASON * 2;
-                clock.weather = Weather::Clear;
                 next(&mut bot, "winter");
             }
         }
-        23 => {
-            if bot.t > 2.0 {
-                shot(&mut commands, &bot, "10_autumn.png");
+        28 => {
+            if bot.t > 1.0 {
+                clock.day = DAYS_PER_SEASON * 2;
+                clock.weather = Weather::Rain;
+                next(&mut bot, "go to rainy autumn");
+            }
+        }
+        29 => {
+            if bot.t > 2.5 {
+                shot(&mut commands, &bot, "10_autumn_rain.png");
                 next(&mut bot, "autumn");
             }
         }
-        24 => {
+        30 => {
             if bot.t > 1.5 {
                 println!("AUTOTEST PASSED ({} checks)", bot.log.len());
                 exit.write(AppExit::Success);

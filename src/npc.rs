@@ -424,9 +424,9 @@ fn npc_brain(
                             if npc.feed_cd <= 0.0 {
                                 npc.feed_cd = 25.0;
                                 notes.write(Note::Feed(format!(
-                                    "{} собирает урожай — {} уходит на общий склад",
+                                    "{} собрал(а) {} на общий склад",
                                     who.name(),
-                                    r.crop.name().to_lowercase()
+                                    r.crop.name_gen()
                                 )));
                             }
                         }

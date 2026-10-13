@@ -185,8 +185,11 @@ def build_map():
         dy = np.maximum(np.maximum(y0 - ys, ys - y1), 0)
         d = np.sqrt(dx * dx + dy * dy)
         base = np.maximum(base, 0.34 - d / 3.0)
+    # always keep open sea around the island
+    edge = np.minimum(np.minimum(xs, W - 1 - xs), np.minimum(ys, H - 1 - ys))
+    base = np.minimum(base, (edge - 3.5) / 3.0)
     # land bridge toward the dock
-    for y in range(32, 42):
+    for y in range(32, 41):
         for x in range(29, 35):
             base[y, x] = max(base[y, x], 0.2)
     ground = np.full((H, W), "~", dtype="<U1")
@@ -210,7 +213,7 @@ def build_map():
     hline(15, 49, 22)      # main street
     vline(15, 19, 28)      # west: ksyu <-> you
     vline(48, 19, 28)      # east: mila <-> tyoma
-    vline(31, 20, 40)      # kitchen door -> dock
+    vline(31, 20, 46)      # kitchen door -> dock
     # dock: first water tile below the land bridge, down to the map edge
     for x in DOCK_X:
         y = 34

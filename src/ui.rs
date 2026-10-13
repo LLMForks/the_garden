@@ -386,7 +386,7 @@ fn spawn_hud(mut commands: Commands, art: Res<Art>) {
             bottom: Val::Px(90.0),
             flex_direction: FlexDirection::Column,
             row_gap: Val::Px(2.0),
-            max_width: Val::Px(360.0),
+            max_width: Val::Px(520.0),
             ..default()
         },
         FeedBox,
@@ -1125,7 +1125,7 @@ fn build_menu(
                         section(p, art, "Украшения");
                         for d in Decor::ALL {
                             let avail = game.decor_available(d, season);
-                            if d.season().is_some_and(|s| s != season) {
+                            if d.season().is_some_and(|s| s != season) || d.unlock_level() > game.level + 1 {
                                 continue;
                             }
                             let price = game.price_of(d.price());
@@ -1428,7 +1428,7 @@ fn menu_buttons(
                         game.tutorial = 5;
                     }
                     play.write(Play::ui(S::Coin).vol(0.55).pitch(if all { 1.0 } else { 1.1 }));
-                    notes.write(Note::Feed(format!("Продано: {} ×{} → +{} монет", it.name(), n, coins)));
+                    notes.write(Note::Feed(format!("Продано: {} ×{} — +{} монет", it.name(), n, coins)));
                 }
             }
             Act::SelectDecor(d) => {
