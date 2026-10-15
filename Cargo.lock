@@ -4234,9 +4234,12 @@ name = "the_garden"
 version = "0.1.0-beta"
 dependencies = [
  "bevy",
+ "getrandom 0.2.17",
+ "js-sys",
  "rand",
  "ron",
  "serde",
+ "web-sys",
 ]
 
 [[package]]

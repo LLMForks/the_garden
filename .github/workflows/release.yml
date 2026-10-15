@@ -1,0 +1,198 @@
+# Builds Linux, Windows and browser versions and publishes them.
+#
+#   push to main        -> browser version to GitHub Pages
+#   tag v*              -> everything: GitHub Release + Pages + itch.io
+#   manual run          -> everything (itch.io optional, see the input)
+#
+# itch.io setup (once): repository Settings -> Secrets and variables -> Actions
+#   secret   BUTLER_API_KEY  = API key from https://itch.io/user/settings/api-keys
+#   variable ITCH_GAME       = "<itch-user>/<game-slug>", e.g. "petr/the-garden"
+# GitHub Pages setup (once): Settings -> Pages -> Source: "GitHub Actions".
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      itch:
+        description: "Upload to itch.io"
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      full: ${{ steps.v.outputs.full }}
+    steps:
+      - id: v
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="0.1.0-beta.${GITHUB_RUN_NUMBER}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          # build everything for tags and manual runs; main pushes only refresh the web version
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux:
+    needs: version
+    if: needs.version.outputs.full == 'true'
+    # older Ubuntu = older glibc requirement = runs on more distros
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ./tools/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/the_garden-linux-x86_64.tar.gz
+
+  windows:
+    needs: version
+    if: needs.version.outputs.full == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/the_garden | Out-Null
+          Copy-Item target/release/the_garden.exe dist/the_garden/
+          Copy-Item README.md dist/the_garden/
+          Copy-Item assets/fonts/OFL-Nunito.txt dist/the_garden/LICENSE-font.txt
+          Compress-Archive -Path dist/the_garden -DestinationPath dist/the_garden-windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/the_garden-windows-x64.zip
+
+  web:
+    needs: version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: wasm-bindgen version from Cargo.lock
+        id: wb
+        run: echo "version=$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[^0-9.]/,""); print; exit}' Cargo.lock)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wb.outputs.version }}
+      - name: binaryen (wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binaryen zip
+      - run: ./tools/build_web.sh
+      - name: Browser smoke test (headless Chromium)
+        run: |
+          mkdir -p /tmp/webtest && cd /tmp/webtest && npm init -y >/dev/null && npm install --silent playwright@1.56.1
+          npx playwright install --with-deps chromium
+          cp "$GITHUB_WORKSPACE/tools/web_smoke.mjs" /tmp/webtest/
+          node /tmp/webtest/web_smoke.mjs "$GITHUB_WORKSPACE/dist/web" "$GITHUB_WORKSPACE/dist/web-smoke.png"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: |
+            dist/the_garden-web.zip
+            dist/web-smoke.png
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/web
+
+  pages:
+    needs: web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  itch:
+    needs: [version, linux, windows, web]
+    if: needs.version.outputs.full == 'true' && (github.event_name != 'workflow_dispatch' || inputs.itch)
+    runs-on: ubuntu-latest
+    env:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      ITCH_GAME: ${{ vars.ITCH_GAME }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Check itch.io settings
+        id: cfg
+        run: |
+          if [ -z "$BUTLER_API_KEY" ] || [ -z "$ITCH_GAME" ]; then
+            echo "::warning::itch.io upload skipped: set secret BUTLER_API_KEY and variable ITCH_GAME"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          path: artifacts
+      - name: Install butler
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          curl -fsSL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip -d butler && chmod +x butler/butler
+          ./butler/butler -V
+      - name: Push to itch.io
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          mkdir -p up/linux up/windows up/web
+          tar -xzf artifacts/linux/the_garden-linux-x86_64.tar.gz -C up/linux
+          unzip -q artifacts/windows/the_garden-windows-x64.zip -d up/windows
+          unzip -q artifacts/web/the_garden-web.zip -d up/web
+          ./butler/butler push up/linux   "$ITCH_GAME:linux"   --userversion "$VERSION"
+          ./butler/butler push up/windows "$ITCH_GAME:windows" --userversion "$VERSION"
+          ./butler/butler push up/web     "$ITCH_GAME:html5"   --userversion "$VERSION"
+
+  github-release:
+    needs: [version, linux, windows, web]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: The Garden ${{ needs.version.outputs.version }}
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          files: |
+            artifacts/linux/the_garden-linux-x86_64.tar.gz
+            artifacts/windows/the_garden-windows-x64.zip
+            artifacts/web/the_garden-web.zip

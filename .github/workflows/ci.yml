@@ -1,0 +1,58 @@
+# Checks every push and pull request: unit tests, the playtest bot (native)
+# and that the browser build still compiles.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests + autotest (Linux)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-0 xvfb mesa-vulkan-drivers libvulkan1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Unit tests
+        run: cargo test --locked
+      - name: Playtest bot (software rendering)
+        run: |
+          cargo build --locked
+          mkdir -p shots
+          xvfb-run -a -s "-screen 0 1280x720x24" ./target/debug/the_garden --autotest --screenshots shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autotest-screenshots
+          path: shots/
+          if-no-files-found: ignore
+
+  web-check:
+    name: Browser build compiles
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --target wasm32-unknown-unknown

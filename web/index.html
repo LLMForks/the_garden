@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Garden — бета</title>
+  <meta name="description" content="Cozy-кооператив про фермерство на общем острове. Бета в браузере.">
+  <link rel="icon" href="logo.png">
+  <style>
+    :root {
+      --bg: #2f5d3a;
+      --bg2: #3f7d4a;
+      --card: #f6ead2;
+      --ink: #3a2a20;
+      --soft: #7a6450;
+      --accent: #7cc457;
+      --accent-d: #4f8a34;
+    }
+    html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+    body { font-family: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
+    #bevy { display: block; width: 100vw; height: 100vh; outline: none; background: #2e73a6; }
+    #screen {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 35%, var(--bg2), var(--bg) 70%);
+      padding: 16px; box-sizing: border-box;
+    }
+    .card {
+      background: var(--card); border: 3px solid #5c3a28; border-radius: 14px;
+      box-shadow: 0 6px 0 #2a1d14, 0 18px 40px rgba(0,0,0,.35);
+      padding: 28px 32px; max-width: 460px; width: 100%; text-align: center; box-sizing: border-box;
+    }
+    .logo { width: 96px; height: 96px; image-rendering: pixelated; }
+    h1 { margin: 6px 0 4px; font-size: 34px; letter-spacing: .5px; }
+    p { margin: 6px 0; color: var(--soft); line-height: 1.45; }
+    button {
+      margin-top: 16px; font: inherit; font-size: 20px; font-weight: 700; color: #fff;
+      background: var(--accent); border: 3px solid #2a3a20; border-radius: 10px;
+      padding: 10px 28px; cursor: pointer; box-shadow: 0 4px 0 var(--accent-d);
+    }
+    button:hover { filter: brightness(1.07); }
+    button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--accent-d); }
+    button:disabled { background: #b8aa98; box-shadow: 0 4px 0 #8a7c6a; cursor: wait; }
+    .bar { height: 10px; background: #e2cfa8; border-radius: 6px; margin-top: 16px; overflow: hidden; display: none; }
+    .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+    .keys { margin-top: 18px; font-size: 14px; text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+    .keys b { color: #8a5a34; white-space: nowrap; }
+    .note { font-size: 13px; margin-top: 14px; }
+    @media (max-width: 520px) { .card { padding: 20px; } h1 { font-size: 28px; } }
+  </style>
+</head>
+<body>
+  <canvas id="bevy" tabindex="0"></canvas>
+  <div id="screen">
+    <div class="card">
+      <img class="logo" src="logo.png" alt="">
+      <h1>The Garden</h1>
+      <p>Cozy-кооператив про фермерство на одном общем острове. Сажай, поливай, готовь и украшай сад вместе с друзьями.</p>
+      <button id="start">Играть</button>
+      <div class="bar" id="bar"><div id="fill"></div></div>
+      <p id="status" class="note"></p>
+      <div class="keys">
+        <b>WASD</b><span>ходить</span>
+        <b>ЛКМ / Пробел</b><span>инструмент (можно зажать)</span>
+        <b>1–7</b><span>слоты · E — взаимодействие</span>
+        <b>Esc</b><span>меню · H — все клавиши</span>
+      </div>
+      <p class="note">Нужны клавиатура и мышь. Прогресс сохраняется в браузере.</p>
+    </div>
+  </div>
+  <script type="module">
+    const btn = document.getElementById('start');
+    const status = document.getElementById('status');
+    const bar = document.getElementById('bar');
+    const fill = document.getElementById('fill');
+
+    async function fetchWithProgress(url) {
+      const res = await fetch(url);
+      const total = Number(res.headers.get('content-length')) || 0;
+      if (!res.body || !total) return res;
+      const reader = res.body.getReader();
+      const chunks = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        got += value.length;
+        fill.style.width = Math.min(100, (got / total) * 100) + '%';
+      }
+      return new Response(new Blob(chunks), { headers: { 'Content-Type': 'application/wasm' } });
+    }
+
+    // Starting from a click lets the browser play sound right away.
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Загрузка…';
+      bar.style.display = 'block';
+      try {
+        const mod = await import('./the_garden.js');
+        const wasm = await fetchWithProgress('./the_garden_bg.wasm');
+        status.textContent = 'Растим остров…';
+        const canvas = document.getElementById('bevy');
+        setTimeout(() => {
+          document.getElementById('screen').style.display = 'none';
+          canvas.focus();
+        }, 300);
+        await mod.default({ module_or_path: wasm });
+      } catch (e) {
+        // Bevy uses an exception to hand control to the browser event loop; that one is fine.
+        if (String(e).includes('Using exceptions for control flow')) return;
+        console.error(e);
+        document.getElementById('screen').style.display = 'flex';
+        status.textContent = 'Не удалось запустить игру: ' + e + '. Нужен браузер с WebGL2 (Chrome, Firefox, Edge, Safari 15+).';
+        btn.disabled = false;
+        btn.textContent = 'Попробовать снова';
+      }
+    });
+  </script>
+</body>
+</html>

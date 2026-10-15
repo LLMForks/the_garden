@@ -98,6 +98,38 @@ python3 tools/gen_audio.py   # звуки и музыка (синтез)
 
 Шрифт — [Nunito](https://github.com/googlefonts/nunito) (SIL OFL 1.1, см. `assets/fonts/`).
 
+## Браузерная версия
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version <версия wasm-bindgen из Cargo.lock>
+./tools/build_web.sh            # -> dist/web (сайт) и dist/the_garden-web.zip (для itch.io)
+python3 -m http.server -d dist/web 8000   # открыть http://localhost:8000
+```
+
+В браузере прогресс хранится в `localStorage`. Параметры передаются через адрес: `?fresh`, `?autotest`.
+
+## CI/CD (GitHub Actions)
+
+- **`.github/workflows/ci.yml`** — на каждый push и PR: юнит-тесты, бот `--autotest` под Xvfb
+  (скриншоты в артефактах) и проверка, что браузерная сборка компилируется.
+- **`.github/workflows/release.yml`**:
+  - push в `main` → собрать веб-версию, проверить её в headless Chromium и выложить на **GitHub Pages**;
+  - тег `v*` (например `git tag v0.2.0-beta && git push --tags`) или ручной запуск (Actions → Release → Run workflow) →
+    Linux, Windows и веб, **GitHub Release** с архивами (только для тегов), **Pages** и **itch.io**.
+
+Один раз настроить в репозитории:
+
+1. **GitHub Pages:** Settings → Pages → Build and deployment → Source: **GitHub Actions**.
+2. **itch.io:** создать страницу игры на itch.io (тип «HTML» — чтобы можно было играть в браузере), затем
+   Settings → Secrets and variables → Actions:
+   - секрет `BUTLER_API_KEY` — ключ с https://itch.io/user/settings/api-keys;
+   - переменная `ITCH_GAME` — `<ник-на-itch>/<адрес-игры>`, например `petr/the-garden`.
+
+   Workflow выкладывает три канала: `linux`, `windows`, `html5`. После первой загрузки на странице игры на itch
+   отметить файл `html5` галочкой «This file will be played in the browser» и указать размер окна, например 1280×720.
+   Если секрета нет, шаг itch.io пропускается с предупреждением.
+
 ## Тесты
 
 ```sh

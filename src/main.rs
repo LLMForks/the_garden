@@ -55,7 +55,16 @@ pub struct Args {
 
 fn parse_args() -> Args {
     let mut a = Args { speed: 1.0, size: (1280.0, 720.0), ..default() };
-    let mut it = std::env::args().skip(1);
+    #[allow(unused_mut)]
+    let mut raw: Vec<String> = std::env::args().skip(1).collect();
+    // in the browser options come from the URL: ?autotest&fresh
+    #[cfg(target_arch = "wasm32")]
+    if let Some(q) = web_sys::window().and_then(|w| w.location().search().ok()) {
+        for part in q.trim_start_matches('?').split('&').filter(|p| !p.is_empty()) {
+            raw.push(format!("--{}", part.split('=').next().unwrap_or("")));
+        }
+    }
+    let mut it = raw.into_iter();
     while let Some(s) = it.next() {
         match s.as_str() {
             "--fresh" => a.fresh = true,
@@ -89,7 +98,7 @@ fn main() {
         None
     } else if args.fresh {
         let p = args.save.clone().unwrap_or_else(save::default_save_path);
-        let _ = std::fs::remove_file(&p);
+        save::io::remove(&p);
         Some(p)
     } else {
         Some(args.save.clone().unwrap_or_else(save::default_save_path))
@@ -106,6 +115,10 @@ fn main() {
                     resolution: WindowResolution::new(args.size.0, args.size.1),
                     present_mode: PresentMode::AutoVsync,
                     resizable: true,
+                    // web: draw into <canvas id="bevy">, follow the page size, keep keys inside the game
+                    canvas: Some("#bevy".into()),
+                    fit_canvas_to_parent: true,
+                    prevent_default_event_handling: true,
                     ..default()
                 }),
                 ..default()

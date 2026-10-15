@@ -11,6 +11,12 @@ serde = { version = "1", features = ["derive"] }
 ron = "0.8"
 rand = "0.8"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy = { version = "0.16", features = ["webgl2"] }
+getrandom = { version = "0.2", features = ["js"] }
+web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
+js-sys = "0.3"
+
 [profile.dev]
 opt-level = 1
 
@@ -23,3 +29,9 @@ lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# smaller build for the browser
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"

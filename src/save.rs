@@ -7,7 +7,6 @@ use bevy::window::WindowCloseRequested;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::data::*;
 use crate::env::SeasonClock;
@@ -56,7 +55,7 @@ pub fn default_save_path() -> PathBuf {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    io::now()
 }
 
 pub struct SavePlugin;
@@ -85,17 +84,17 @@ fn load_game(
     let Some(p) = &path.0 else {
         return;
     };
-    let data = match std::fs::read_to_string(p) {
-        Ok(s) => match ron::from_str::<SaveData>(&s) {
+    let data = match io::read(p) {
+        Some(s) => match ron::from_str::<SaveData>(&s) {
             Ok(d) if d.version == VERSION => d,
             Ok(_) | Err(_) => {
                 warn!("save file {:?} unreadable, starting fresh (old one kept as .bak)", p);
-                let _ = std::fs::rename(p, p.with_extension("ron.bak"));
+                io::backup(p);
                 ui.open(Menu::Intro);
                 return;
             }
         },
-        Err(_) => {
+        None => {
             ui.open(Menu::Intro);
             return;
         }
@@ -220,14 +219,71 @@ fn write_save(
         warn!("could not serialize save");
         return;
     };
-    if let Some(dir) = p.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let tmp = p.with_extension("ron.tmp");
-    if std::fs::write(&tmp, text).is_ok() {
-        let _ = std::fs::rename(&tmp, p);
-    } else {
+    if !io::write(p, &text) {
         warn!("could not write save to {:?}", p);
+    }
+}
+
+/// Save storage: a file on desktop, `localStorage` in the browser.
+pub mod io {
+    use std::path::Path;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn read(p: &Path) -> Option<String> {
+        std::fs::read_to_string(p).ok()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn write(p: &Path, text: &str) -> bool {
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = p.with_extension("ron.tmp");
+        std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, p).is_ok()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn backup(p: &Path) {
+        let _ = std::fs::rename(p, p.with_extension("ron.bak"));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn remove(p: &Path) {
+        let _ = std::fs::remove_file(p);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn now() -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn storage() -> Option<web_sys::Storage> {
+        web_sys::window()?.local_storage().ok()?
+    }
+    #[cfg(target_arch = "wasm32")]
+    fn key(p: &Path) -> String {
+        format!("the_garden:{}", p.file_name().and_then(|f| f.to_str()).unwrap_or("save.ron"))
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn read(p: &Path) -> Option<String> {
+        storage()?.get_item(&key(p)).ok()?
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn write(p: &Path, text: &str) -> bool {
+        storage().is_some_and(|s| s.set_item(&key(p), text).is_ok())
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn backup(p: &Path) {
+        if let (Some(s), Some(t)) = (storage(), read(p)) {
+            let _ = s.set_item(&(key(p) + ".bak"), &t);
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn remove(p: &Path) {
+        if let Some(s) = storage() {
+            let _ = s.remove_item(&key(p));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn now() -> u64 {
+        (js_sys::Date::now() / 1000.0) as u64
     }
 }
 
